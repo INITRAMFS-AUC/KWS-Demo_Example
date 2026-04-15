@@ -200,21 +200,33 @@ def load_test_samples(dataset_root, max_per_class=None):
 
 def write_test_bin(samples, output_path):
     """
-    Write samples to test_data.bin in NNoM batch format.
+    Write samples to test_data.bin.
 
     Format:
-      Repeat until all samples consumed:
+      int32  n_real_samples          — actual number of samples (little-endian)
+      Repeat until all batches written (last batch zero-padded to LABEL_BATCH):
         int8  labels[LABEL_BATCH]
         int8  audio[LABEL_BATCH × WINDOW_SAMPLES]
-    """
-    # Pad to a multiple of LABEL_BATCH
-    while len(samples) % LABEL_BATCH != 0:
-        samples.append((0, np.zeros(WINDOW_SAMPLES, dtype=np.int8)))
 
-    print(f"\nWriting {len(samples)} samples to {output_path} ...")
+    The 4-byte header lets the C harness stop after exactly n_real_samples,
+    so padding clips never count toward accuracy.
+    """
+    import struct
+
+    n_real = len(samples)
+
+    # Pad to a multiple of LABEL_BATCH so the C loop always reads full batches
+    padded = list(samples)
+    while len(padded) % LABEL_BATCH != 0:
+        padded.append((0, np.zeros(WINDOW_SAMPLES, dtype=np.int8)))
+
+    print(f"\nWriting {n_real} samples ({len(padded)} with padding) to {output_path} ...")
     with open(output_path, 'wb') as f:
-        for batch_start in range(0, len(samples), LABEL_BATCH):
-            batch = samples[batch_start:batch_start + LABEL_BATCH]
+        # Header: real sample count
+        f.write(struct.pack('<i', n_real))
+
+        for batch_start in range(0, len(padded), LABEL_BATCH):
+            batch = padded[batch_start:batch_start + LABEL_BATCH]
 
             # Labels
             labels = np.array([c for c, _ in batch], dtype=np.int8)
@@ -225,7 +237,7 @@ def write_test_bin(samples, output_path):
                 f.write(audio.tobytes())
 
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    print(f"Written: {output_path}  ({size_mb:.1f} MB, {len(samples)} samples)")
+    print(f"Written: {output_path}  ({size_mb:.1f} MB, {n_real} real samples)")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
