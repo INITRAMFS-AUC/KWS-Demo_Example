@@ -36,9 +36,17 @@ CC    = /opt/riscv/gcc15/bin/riscv32-unknown-elf-gcc
 SPIKE = /opt/riscv/bin/spike
 PK    = /opt/riscv/riscv32-unknown-elf/bin/pk
 
-# RV32IMC with Zicsr + Zifencei extensions.
-# ilp32: 32-bit pointers, no hardware FPU.
-ARCH  = rv32imc_zicsr_zifencei
+# ISA matches the hardware Hazard3 configuration:
+#   I   — base integer
+#   M   — hardware multiply/divide   (EXTENSION_M = 1)
+#   A   — atomics                    (EXTENSION_A = 1)
+#   C   — compressed instructions    (EXTENSION_C = 1)
+#   Zicsr   — CSR instructions       (implied by CSR_M_MANDATORY/CSR_M_TRAP = 1)
+#   Zifencei — included because this exact string is in the toolchain multilib
+#              generator, so GCC can find its runtime libraries.  NNoM never
+#              emits fence.i, so this extension is never executed on hardware
+#              (EXTENSION_ZIFENCEI = 0 in Hazard3 config is therefore safe).
+ARCH  = rv32imac_zicsr_zifencei
 ABI   = ilp32
 
 # ── NNoM ──────────────────────────────────────────────────────────────────────
@@ -67,6 +75,7 @@ LDFLAGS = -lm
 # -m256: 256 MB of guest memory.
 # NNoM static buffer = 1 MB; test file (full GSCD test split) = ~35 MB.
 # 256 MB is more than enough.
+# --isa must match -march so Spike can execute the binary.
 SPIKE_FLAGS = --isa=$(ARCH) -m256
 
 # ── Build directory ───────────────────────────────────────────────────────────
