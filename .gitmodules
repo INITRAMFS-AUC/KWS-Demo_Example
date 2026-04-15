@@ -1,0 +1,4 @@
+[submodule "nnom"]
+	path = nnom
+	url = https://github.com/majianjia/nnom
+	branch = master
