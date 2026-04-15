@@ -76,13 +76,15 @@ SPIKE = /opt/riscv/bin/spike
 PK    = /opt/riscv/riscv32-unknown-elf/bin/pk
 ```
 
-### 2. NNoM submodule
+### 2. NNoM
 
-```bash
-git submodule update --init --recursive
+NNoM is **pre-installed in the container** at `/opt/nnom`.  The Dockerfile
+clones it there directly:
 ```
-
-This populates `nnom/` with the NNoM library source code.
+git clone https://github.com/majianjia/nnom.git   →   /opt/nnom
+```
+No submodule initialisation or extra installation is required.
+If for any reason it is missing: `git clone https://github.com/majianjia/nnom /opt/nnom`
 
 ### 3. Python and GSCD (for test data only)
 
@@ -104,13 +106,10 @@ have the file, you can skip this step.
 ## Quickstart
 
 ```bash
-# 1. Get NNoM
-git submodule update --init --recursive
-
-# 2. Generate test_data.bin  (~35 MB, full GSCD test split)
+# 1. Generate test_data.bin  (~35 MB, full GSCD test split)
 python3 generate_test_data.py
 
-# 3. Build and run on Spike
+# 2. Build and run on Spike
 make run_strided_s16_nodil
 ```
 
@@ -241,7 +240,8 @@ test harness.  Do not reorder it.
 → Run `python3 generate_test_data.py` first.
 
 **Compile error: `nnom.h: No such file or directory`**
-→ Run `git submodule update --init --recursive`.
+→ NNoM should be at `/opt/nnom` (pre-installed by Dockerfile). Check with
+  `ls /opt/nnom/inc/nnom.h`. If missing: `git clone https://github.com/majianjia/nnom /opt/nnom`
 
 **`ACCURACY:0.000000` or no `RESULT:` lines printed**
 → The model produced no output.  Check that `nnom/inc/nnom.h` exists and that

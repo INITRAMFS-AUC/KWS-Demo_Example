@@ -43,7 +43,10 @@ ABI   = ilp32
 
 # ── NNoM ──────────────────────────────────────────────────────────────────────
 
-NNOM_DIR  = nnom
+# NNoM is pre-installed in the container at /opt/nnom by the Dockerfile.
+# It was cloned there as: git clone https://github.com/majianjia/nnom.git
+# No submodule initialisation is required.
+NNOM_DIR  = /opt/nnom
 NNOM_SRCS = $(wildcard $(NNOM_DIR)/src/core/*.c) \
             $(wildcard $(NNOM_DIR)/src/layers/*.c) \
             $(wildcard $(NNOM_DIR)/src/backends/*.c)
@@ -164,9 +167,9 @@ setup:
 	@printf "%-35s" "python3 ..."
 	@python3 --version 2>/dev/null || echo "NOT FOUND"
 	@echo ""
-	@printf "%-35s" "NNoM submodule (nnom/inc/nnom.h) ..."
-	@test -f nnom/inc/nnom.h && echo "OK" || \
-	    echo "NOT FOUND — run: git submodule update --init --recursive"
+	@printf "%-35s" "NNoM (/opt/nnom/inc/nnom.h) ..."
+	@test -f /opt/nnom/inc/nnom.h && echo "OK" || \
+	    echo "NOT FOUND — /opt/nnom missing (check Dockerfile setup)"
 	@echo ""
 
 # ── Help ──────────────────────────────────────────────────────────────────────
