@@ -51,10 +51,10 @@ ABI   = ilp32
 
 # ── NNoM ──────────────────────────────────────────────────────────────────────
 
-# NNoM is pre-installed in the container at /opt/nnom by the Dockerfile.
-# It was cloned there as: git clone https://github.com/majianjia/nnom.git
-# No submodule initialisation is required.
-NNOM_DIR  = /opt/nnom
+# NNoM is tracked as a git submodule at extern/nnom (fork: INITRAMFS-AUC/nnom).
+# After cloning this repo, initialise it with:
+#   git submodule update --init --recursive
+NNOM_DIR  = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))extern/nnom
 NNOM_SRCS = $(wildcard $(NNOM_DIR)/src/core/*.c) \
             $(wildcard $(NNOM_DIR)/src/layers/*.c) \
             $(wildcard $(NNOM_DIR)/src/backends/*.c)
@@ -176,9 +176,9 @@ setup:
 	@printf "%-35s" "python3 ..."
 	@python3 --version 2>/dev/null || echo "NOT FOUND"
 	@echo ""
-	@printf "%-35s" "NNoM (/opt/nnom/inc/nnom.h) ..."
-	@test -f /opt/nnom/inc/nnom.h && echo "OK" || \
-	    echo "NOT FOUND — /opt/nnom missing (check Dockerfile setup)"
+	@printf "%-35s" "NNoM submodule ..."
+	@test -f $(NNOM_DIR)/inc/nnom.h && echo "OK ($(NNOM_DIR))" || \
+	    echo "NOT FOUND — run: git submodule update --init --recursive"
 	@echo ""
 
 # ── Help ──────────────────────────────────────────────────────────────────────
