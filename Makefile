@@ -130,7 +130,7 @@ BARE_LDFLAGS = -nostartfiles \
                -T soc/spike_soc.ld \
                -lm -lgcc
 
-$(BUILD)/kws_bare: kws_bare.c weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+$(BUILD)/kws_bare: kws_bare.c strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling kws_bare (bare-metal) ..."
 	$(CC) $(BARE_CFLAGS) soc/crt0.s kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(BARE_LDFLAGS)

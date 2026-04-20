@@ -538,8 +538,9 @@ static nnom_model_t* nnom_model_create(void)
 	layer[15] = model.hook(dense_s(&dense_config), layer[14]);
 	layer[16] = model.active(act_relu(), layer[15]);
 	layer[17] = model.hook(dense_s(&dense_1_config), layer[16]);
-	layer[18] = model.hook(softmax_s(&softmax_config), layer[17]);
-	layer[19] = model.hook(output_s(&output0_config), layer[18]);
+	/* Softmax omitted: argmax(softmax(x)) == argmax(x) always.
+	 * expf() is soft-float and was ~57% of all inference instructions. */
+	layer[19] = model.hook(output_s(&output0_config), layer[17]);
 	model_compile(&model, layer[0], layer[19]);
 	return &model;
 }
