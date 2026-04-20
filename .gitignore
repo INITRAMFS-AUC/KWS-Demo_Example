@@ -1,0 +1,5 @@
+build/
+test_clips/
+*.o
+*.d
+plugins/*.so
