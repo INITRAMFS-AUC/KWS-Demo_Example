@@ -66,7 +66,7 @@ CFLAGS = -march=$(ARCH) -mabi=$(ABI) \
          -O2 -std=c99 \
          -DNNOM_USING_STATIC_MEMORY \
          $(NNOM_INC) \
-         -I.
+         -I. -Istrided_s16_nodil
 
 LDFLAGS = -lm
 
@@ -130,9 +130,9 @@ BARE_LDFLAGS = -nostartfiles \
                -T soc/spike_soc.ld \
                -lm -lgcc
 
-$(BUILD)/kws_bare: kws_bare.c strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+$(BUILD)/kws_bare: strided_s16_nodil/kws_bare.c strided_s16_nodil/strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling kws_bare (bare-metal) ..."
-	$(CC) $(BARE_CFLAGS) soc/crt0.s kws_bare.c $(NNOM_SRCS) \
+	$(CC) $(BARE_CFLAGS) -Istrided_s16_nodil soc/crt0.s strided_s16_nodil/kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(BARE_LDFLAGS)
 	@echo "Built: $@"
 	$(CC:%gcc=%size) $@
@@ -184,9 +184,9 @@ SOC_SRAM_LDFLAGS = -nostartfiles \
                    -Wl,--defsym=SRAM_SIZE=$(SRAM_SIZE_BYTES) \
                    -lm -lgcc
 
-$(BUILD)/kws_soc: kws_bare.c strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+$(BUILD)/kws_soc: strided_s16_nodil/kws_bare.c strided_s16_nodil/strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling kws_soc (XIP: flash+SRAM) ..."
-	$(CC) $(SOC_CFLAGS) soc/crt0.s kws_bare.c $(NNOM_SRCS) \
+	$(CC) $(SOC_CFLAGS) -Istrided_s16_nodil soc/crt0.s strided_s16_nodil/kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(SOC_XIP_LDFLAGS)
 	@echo "Built: $@"
 	$(CC:%gcc=%size) $@
@@ -194,9 +194,9 @@ $(BUILD)/kws_soc: kws_bare.c strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS)
 # SRAM-only variant for GDB `load` workflow (everything in SRAM — requires
 # testbench to support loading ~146 KB into the 128 KB SRAM, which will NOT
 # fit at default SRAM size; only use if the simulation uses a larger SRAM).
-$(BUILD)/kws_soc_sram: kws_bare.c strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+$(BUILD)/kws_soc_sram: strided_s16_nodil/kws_bare.c strided_s16_nodil/strided_s16_nodil_weights.h soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling kws_soc_sram (SRAM-only) ..."
-	$(CC) $(SOC_CFLAGS) soc/crt0.s kws_bare.c $(NNOM_SRCS) \
+	$(CC) $(SOC_CFLAGS) -Istrided_s16_nodil soc/crt0.s strided_s16_nodil/kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(SOC_SRAM_LDFLAGS)
 	@echo "Built: $@"
 	$(CC:%gcc=%size) $@
@@ -262,13 +262,13 @@ all: $(ALL_TARGETS) $(BUILD)/kws_bare
 # MACs:     ~5.46M per inference
 # Weights:  strided_s16_nodil_weights.h
 
-$(BUILD)/strided_s16_nodil: strided_s16_nodil_main.c \
-                             strided_s16_nodil_weights.h \
+$(BUILD)/strided_s16_nodil: strided_s16_nodil/strided_s16_nodil_main.c \
+                             strided_s16_nodil/strided_s16_nodil_weights.h \
                              $(NNOM_SRCS)
 	@mkdir -p $(BUILD)
 	@echo "Compiling strided_s16_nodil ..."
-	$(CC) $(CFLAGS) \
-	    strided_s16_nodil_main.c \
+	$(CC) $(CFLAGS) -Istrided_s16_nodil \
+	    strided_s16_nodil/strided_s16_nodil_main.c \
 	    $(NNOM_SRCS) \
 	    -o $@ $(LDFLAGS)
 	@echo "Built: $@"

@@ -5,7 +5,7 @@ the **KWS-SoC** (Hazard3 RV32IMAC, 128 KB SRAM, I2S mic, UART).
 
 ---
 
-## Two tracks
+## Three tracks
 
 ### Track 1 — Accuracy benchmark (pk-based, Spike only)
 
@@ -17,7 +17,21 @@ set of weights produces the expected accuracy before spending time on firmware.
 
 **Expected: 85.3% on the full GSCD test split.**
 
-### Track 2 — Bare-metal SoC firmware (the real thing)
+### Track 2 — Sliding-window streaming module
+
+`streaming/kws_streaming.h` + `streaming/kws_streaming.c`
+
+Model-agnostic sliding-window engine for continuous keyword detection.
+Maintains a circular audio buffer and triggers inference every HOP samples
+(default 200 ms → 5 inferences/second) instead of filling and resetting.
+Keywords that straddle a 1-second boundary are still detected.
+
+**Validated: 89.1% detection rate on 128-sample smoke test (Spike, HOP=200 ms).**
+
+Integration target for bare-metal: call `kws_stream_push_block()` from the
+I2S ISR instead of the fill-and-reset ring buffer in `kws_bare.c`.
+
+### Track 3 — Bare-metal SoC firmware (the real thing)
 
 `kws_bare.c` + `strided_s16_nodil_weights.h`
 
@@ -38,10 +52,15 @@ Only the build flags differ.
 ```
 kws-spike-validate/
 │
-├── kws_bare.c                    Bare-metal KWS firmware (SoC deployment target)
-├── strided_s16_nodil_weights.h   NNoM int8 model weights (85.3% accuracy)
-├── strided_s16_nodil_main.c      pk-based accuracy benchmark harness
-├── weights.h                     Alias weights header (same model)
+├── strided_s16_nodil/            Model-specific files (one folder per model)
+│   ├── kws_bare.c                Bare-metal firmware for this model
+│   ├── strided_s16_nodil_main.c  pk-based accuracy benchmark harness
+│   ├── strided_s16_nodil_weights.h  NNoM int8 model weights (85.3% accuracy)
+│   └── weights.h                 Alias weights header
+│
+├── streaming/
+│   ├── kws_streaming.h           Sliding-window streaming API (model-agnostic)
+│   └── kws_streaming.c           Circular buffer + hop-triggered inference engine
 │
 ├── soc/
 │   ├── crt0.s                    Bare-metal startup (reg init, BSS zero, data copy)
@@ -514,21 +533,21 @@ Fixed alphabetically in both the training script and the weights header.
 | Output | `{11}` int8 softmax scores |
 | QAT | Yes (per-channel KLD) |
 
-Architecture:
+Architecture (verified against NNoM model summary):
 ```
 Input  {1, 8000, 1}
   Conv1D k=129, s=16, f=32, VALID  →  {1, 492, 32}   learned filterbank
   ReLU
-  Conv1D k=3, s=1, f=48, VALID     →  {1, 490, 48}
-  ReLU → MaxPool k=4, s=4          →  {1, 122, 48}
-  Conv1D k=3, s=1, f=48, VALID     →  {1, 120, 48}
-  ReLU → MaxPool k=2, s=2          →  {1,  60, 48}
-  Conv1D k=3, s=1, f=48, VALID     →  {1,  58, 48}
-  ReLU → MaxPool k=2, s=2          →  {1,  29, 48}
-  Conv1D k=3, s=1, f=48, VALID     →  {1,  27, 48}
+  Conv1D k=3,   s=1,  f=48, SAME   →  {1, 492, 48}
+  ReLU → MaxPool k=4, s=4          →  {1, 123, 48}
+  Conv1D k=3,   s=1,  f=48, SAME   →  {1, 123, 48}
+  ReLU → MaxPool k=4, s=4          →  {1,  30, 48}
+  Conv1D k=3,   s=1,  f=48, SAME   →  {1,  30, 48}
+  ReLU → MaxPool k=2, s=2          →  {1,  15, 48}
+  Conv1D k=3,   s=1,  f=48, SAME   →  {1,  15, 48}
   ReLU → GlobalAvgPool             →  {48}
-  Dense 32 → ReLU                  →  {32}
-  Dense 11 → Softmax               →  {11}
+  Dense 48→32 + ReLU               →  {32}
+  Dense 32→11 + Softmax            →  {11}
 Output {11}
 ```
 
