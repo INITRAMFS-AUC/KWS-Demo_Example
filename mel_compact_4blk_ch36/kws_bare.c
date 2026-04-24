@@ -104,8 +104,10 @@ static inline void csr_enable_mie(void) {
 }
 
 /* ── NNoM static memory buffer ───────────────────────────────────────────── */
+/* Peak measured on Spike: 32,960 bytes. 36 KB gives ~3.8 KB headroom.
+ * Compare to strided_s16_nodil which needs 52 KB — this model saves 16 KB. */
 #ifndef NNOM_STATIC_BUF_KB
-#define NNOM_STATIC_BUF_KB 64
+#define NNOM_STATIC_BUF_KB 36
 #endif
 #ifdef NNOM_USING_STATIC_MEMORY
 static uint8_t nnom_static_buf[NNOM_STATIC_BUF_KB * 1024];

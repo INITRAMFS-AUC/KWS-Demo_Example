@@ -325,7 +325,7 @@ $(BUILD)/mel_compact_4blk_ch36_bare: mel_compact_4blk_ch36/kws_bare.c \
                                        mel_compact_4blk_ch36/mel_compact_4blk_ch36_weights.h \
                                        soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling mel_compact_4blk_ch36_bare (bare-metal) ..."
-	$(CC) $(BARE_CFLAGS) -Imel_compact_4blk_ch36 \
+	$(CC) $(BARE_CFLAGS) -DNNOM_STATIC_BUF_KB=36 -Imel_compact_4blk_ch36 \
 	    soc/crt0.s mel_compact_4blk_ch36/kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(BARE_LDFLAGS)
 	@echo "Built: $@"
@@ -335,7 +335,7 @@ $(BUILD)/mel_compact_4blk_ch36_soc: mel_compact_4blk_ch36/kws_bare.c \
                                       mel_compact_4blk_ch36/mel_compact_4blk_ch36_weights.h \
                                       soc/crt0.s $(NNOM_SRCS) | $(BUILD)
 	@echo "Compiling mel_compact_4blk_ch36_soc (XIP: flash+SRAM) ..."
-	$(CC) $(SOC_CFLAGS) -Imel_compact_4blk_ch36 \
+	$(CC) $(SOC_CFLAGS) -DNNOM_STATIC_BUF_KB=36 -Imel_compact_4blk_ch36 \
 	    soc/crt0.s mel_compact_4blk_ch36/kws_bare.c $(NNOM_SRCS) \
 	    -o $@ $(SOC_XIP_LDFLAGS)
 	@echo "Built: $@"
