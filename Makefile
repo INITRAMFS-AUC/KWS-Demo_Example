@@ -244,7 +244,7 @@ batch_kws_bare: $(BUILD)/kws_bare $(PLUGINS)
 
 # ── All models ────────────────────────────────────────────────────────────────
 
-ALL_TARGETS = $(BUILD)/strided_s16_nodil
+ALL_TARGETS = $(BUILD)/strided_s16_nodil $(BUILD)/mel_compact_4blk_ch36
 
 # ── Default target ────────────────────────────────────────────────────────────
 
@@ -287,6 +287,63 @@ run_strided_s16_nodil: $(BUILD)/strided_s16_nodil test_data.bin
 	@echo ""
 	@grep "ACCURACY:" $(BUILD)/strided_s16_nodil.log || true
 	@echo "Full log: $(BUILD)/strided_s16_nodil.log"
+
+# ── mel_compact_4blk_ch36 ─────────────────────────────────────────────────��───
+#
+# Model:    mel_compact_4blk_ch36 (seed 789)
+# Accuracy: 88.7% NNoM int8 (validated on Spike, 1000 samples)
+# Params:   15,851  (15.0 KB weights, 28.7 KB total flash)
+# Frontend: Conv2D(1×65, stride=16) mel-initialised, trained end-to-end
+
+$(BUILD)/mel_compact_4blk_ch36: mel_compact_4blk_ch36/mel_compact_4blk_ch36_main.c \
+                                  mel_compact_4blk_ch36/mel_compact_4blk_ch36_weights.h \
+                                  $(NNOM_SRCS)
+	@mkdir -p $(BUILD)
+	@echo "Compiling mel_compact_4blk_ch36 ..."
+	$(CC) $(CFLAGS) -Imel_compact_4blk_ch36 \
+	    mel_compact_4blk_ch36/mel_compact_4blk_ch36_main.c \
+	    $(NNOM_SRCS) \
+	    -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+.PHONY: build_mel_compact_4blk_ch36 run_mel_compact_4blk_ch36
+
+build_mel_compact_4blk_ch36: $(BUILD)/mel_compact_4blk_ch36
+
+run_mel_compact_4blk_ch36: $(BUILD)/mel_compact_4blk_ch36 test_data.bin
+	@echo ""
+	@echo "Running mel_compact_4blk_ch36 on Spike ..."
+	@echo "Expected accuracy: ~88.7%"
+	@echo ""
+	cd $(BUILD) && $(SPIKE) $(SPIKE_FLAGS) $(PK) mel_compact_4blk_ch36 \
+	    | tee mel_compact_4blk_ch36.log
+	@echo ""
+	@grep "ACCURACY:" $(BUILD)/mel_compact_4blk_ch36.log || true
+	@echo "Full log: $(BUILD)/mel_compact_4blk_ch36.log"
+
+$(BUILD)/mel_compact_4blk_ch36_bare: mel_compact_4blk_ch36/kws_bare.c \
+                                       mel_compact_4blk_ch36/mel_compact_4blk_ch36_weights.h \
+                                       soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+	@echo "Compiling mel_compact_4blk_ch36_bare (bare-metal) ..."
+	$(CC) $(BARE_CFLAGS) -Imel_compact_4blk_ch36 \
+	    soc/crt0.s mel_compact_4blk_ch36/kws_bare.c $(NNOM_SRCS) \
+	    -o $@ $(BARE_LDFLAGS)
+	@echo "Built: $@"
+	$(CC:%gcc=%size) $@
+
+$(BUILD)/mel_compact_4blk_ch36_soc: mel_compact_4blk_ch36/kws_bare.c \
+                                      mel_compact_4blk_ch36/mel_compact_4blk_ch36_weights.h \
+                                      soc/crt0.s $(NNOM_SRCS) | $(BUILD)
+	@echo "Compiling mel_compact_4blk_ch36_soc (XIP: flash+SRAM) ..."
+	$(CC) $(SOC_CFLAGS) -Imel_compact_4blk_ch36 \
+	    soc/crt0.s mel_compact_4blk_ch36/kws_bare.c $(NNOM_SRCS) \
+	    -o $@ $(SOC_XIP_LDFLAGS)
+	@echo "Built: $@"
+	$(CC:%gcc=%size) $@
+
+.PHONY: build_mel_compact_4blk_ch36_bare build_mel_compact_4blk_ch36_soc
+build_mel_compact_4blk_ch36_bare: $(BUILD)/mel_compact_4blk_ch36_bare
+build_mel_compact_4blk_ch36_soc:  $(BUILD)/mel_compact_4blk_ch36_soc
 
 # ── Template for adding a new model ──────────────────────────────────────────
 # To add a new model (e.g. da4a), uncomment and edit:
