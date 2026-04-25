@@ -62,8 +62,9 @@ typedef struct {
 void kws_stream_b_reset(kws_stream_b_t *s);
 
 /* Push n Q7 int8 samples.
- * When KWS_B_HOP samples have been accumulated, runs inference and fills logits[11].
- * Returns 1 if logits were produced this call, 0 otherwise.
- * For test-harness use, push exactly KWS_B_HOP samples at a time. */
+ * When KWS_B_HOP samples have been accumulated, runs inference and fills
+ * scores[11] with Q7 softmax probabilities (value/128 = probability, 0–127).
+ * Threshold example: scores[c] > 96 means class c has ≥75% confidence.
+ * Returns 1 if scores were produced this call, 0 otherwise. */
 int  kws_stream_b_push(kws_stream_b_t *s, const int8_t *samples, int n,
-                       int8_t logits[KWS_B_NUM_CLASSES]);
+                       int8_t scores[KWS_B_NUM_CLASSES]);

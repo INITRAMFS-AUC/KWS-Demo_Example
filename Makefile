@@ -60,6 +60,10 @@ NNOM_SRCS = $(wildcard $(NNOM_DIR)/src/core/*.c) \
             $(wildcard $(NNOM_DIR)/src/backends/*.c)
 NNOM_INC  = -I$(NNOM_DIR)/inc -I$(NNOM_DIR)/port
 
+# Streaming engine only needs the math backends — no model graph infrastructure.
+NNOM_LOCAL_SRCS = $(NNOM_DIR)/src/backends/nnom_local.c \
+                  $(NNOM_DIR)/src/backends/nnom_local_q15.c
+
 # ── Compiler flags ────────────────────────────────────────────────────────────
 
 CFLAGS = -march=$(ARCH) -mabi=$(ABI) \
@@ -204,6 +208,100 @@ $(BUILD)/kws_soc_sram: strided_s16_nodil/kws_bare.c strided_s16_nodil/strided_s1
 .PHONY: build_kws_soc build_kws_soc_sram
 build_kws_soc: $(BUILD)/kws_soc
 build_kws_soc_sram: $(BUILD)/kws_soc_sram
+
+# ── Streaming bare-metal firmware (kws_bare_stream) ──────────────────────────
+#
+# Uses kws_stream_b engine: 200ms hop, no NNoM model_run(), no static buf.
+# Threshold/debounce tuned from streaming_b_realistic evaluation:
+#   T=60 (46.9% confidence), D=5 hops (1000ms debounce), 3-hop smoothing
+#
+# SRAM breakdown (128 KB SoC):
+#   kws_stream_b_t state    ~3 KB
+#   engine scratch (BSS)   ~19 KB
+#   hop_buf + safe_hop       3 KB
+#   stack                    4 KB
+#   other statics           ~1 KB
+#   TOTAL                  ~30 KB  (vs ~60 KB for kws_bare)
+#
+# I2S_FIFO_DEPTH=1600 for Spike (1 ISR per hop instead of 200).
+# I2S_FIFO_DEPTH=8    for real SoC hardware (unchanged from kws_bare).
+
+STREAM_BARE_CFLAGS = -march=$(ARCH) -mabi=$(ABI) \
+                     -O2 -std=gnu99 \
+                     -ffunction-sections -fdata-sections \
+                     -DNNOM_USING_STATIC_MEMORY \
+                     -DNNOM_BARE_METAL \
+                     -DCLK_MHZ=36 -DUART_BAUD_RATE=115200 \
+                     -DI2S_FIFO_DEPTH=8000 \
+                     -DSPIKE_PLIC \
+                     $(NNOM_INC) \
+                     -Istrided_s16_nodil -Istreaming_b \
+                     -I.
+
+STREAM_BARE_LDFLAGS = -nostartfiles \
+                      -T soc/spike_soc.ld \
+                      -Wl,--gc-sections \
+                      -lm -lgcc
+
+$(BUILD)/kws_bare_stream: streaming_b/kws_bare_stream.c \
+                          streaming_b/kws_stream_b.c \
+                          strided_s16_nodil/strided_s16_nodil_weights.h \
+                          soc/crt0.s $(NNOM_LOCAL_SRCS) | $(BUILD)
+	@echo "Compiling kws_bare_stream (bare-metal streaming) ..."
+	$(CC) $(STREAM_BARE_CFLAGS) \
+	    soc/crt0.s \
+	    streaming_b/kws_bare_stream.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_LOCAL_SRCS) \
+	    -o $@ $(STREAM_BARE_LDFLAGS)
+	@echo "Built: $@"
+	$(CC:%gcc=%size) $@
+
+# SoC XIP variant (weights in flash, state in SRAM)
+STREAM_SOC_CFLAGS = -march=$(ARCH) -mabi=$(ABI) \
+                    -O2 -std=gnu99 \
+                    -ffunction-sections -fdata-sections \
+                    -DNNOM_USING_STATIC_MEMORY \
+                    -DNNOM_BARE_METAL \
+                    -DCLK_MHZ=36 -DUART_BAUD_RATE=115200 \
+                    -DI2S_FIFO_DEPTH=8 \
+                    $(NNOM_INC) \
+                    -Istrided_s16_nodil -Istreaming_b \
+                    -I.
+
+STREAM_SOC_LDFLAGS = -nostartfiles \
+                     -T soc/link.ld \
+                     -Wl,--defsym=SRAM_SIZE=$(SRAM_SIZE_BYTES) \
+                     -Wl,--gc-sections \
+                     -lm -lgcc
+
+$(BUILD)/kws_stream_soc: streaming_b/kws_bare_stream.c \
+                         streaming_b/kws_stream_b.c \
+                         strided_s16_nodil/strided_s16_nodil_weights.h \
+                         soc/crt0.s $(NNOM_LOCAL_SRCS) | $(BUILD)
+	@echo "Compiling kws_stream_soc (XIP: flash+SRAM streaming) ..."
+	$(CC) $(STREAM_SOC_CFLAGS) \
+	    soc/crt0.s \
+	    streaming_b/kws_bare_stream.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_LOCAL_SRCS) \
+	    -o $@ $(STREAM_SOC_LDFLAGS)
+	@echo "Built: $@"
+	$(CC:%gcc=%size) $@
+
+.PHONY: build_kws_bare_stream build_kws_stream_soc run_kws_bare_stream
+build_kws_bare_stream: $(BUILD)/kws_bare_stream
+build_kws_stream_soc:  $(BUILD)/kws_stream_soc
+
+run_kws_bare_stream: $(BUILD)/kws_bare_stream $(PLUGINS)
+	@echo ""
+	@echo "Running kws_bare_stream on Spike (bare-metal streaming, no pk) ..."
+	@echo "Audio: $(AUDIO_FILE)"
+	@echo ""
+	LD_LIBRARY_PATH=/opt/riscv/lib $(SPIKE) $(SPIKE_BARE_FLAGS) \
+	    $(SPIKE_PLUGINS) \
+	    $(BUILD)/kws_bare_stream
+	@echo ""
 
 # ── Run bare-metal firmware on Spike (single clip) ────────────────────────────
 # Usage: make run_kws_bare AUDIO_FILE=test_clips/yes_0000.bin
@@ -380,6 +478,108 @@ run_streaming_b: $(BUILD)/streaming_b test_data.bin
 	@echo ""
 	@grep -E "STREAMING_ACC:|BATCH_ACC:|PARITY:" $(BUILD)/streaming_b.log || true
 	@echo "Full log: $(BUILD)/streaming_b.log"
+
+# ── streaming_b_cont (continuous-stream test, no reset between clips) ─────────
+#
+# Unlike streaming_b, the engine is never reset between clips.
+# Each keyword is preceded by SILENCE_HOPS (5) hops of zeros so the GAP ring
+# is flushed before the next keyword starts.
+# Expected: LAST_HOP_ACC ≥ 0.83, BEST_HOP_ACC ≥ 0.84
+
+$(BUILD)/streaming_b_cont: streaming_b/streaming_b_cont_main.c \
+                            streaming_b/kws_stream_b.c \
+                            strided_s16_nodil/strided_s16_nodil_weights.h \
+                            $(NNOM_SRCS)
+	@mkdir -p $(BUILD)
+	@echo "Compiling streaming_b_cont ..."
+	$(CC) $(CFLAGS) -Istrided_s16_nodil -Istreaming_b \
+	    streaming_b/streaming_b_cont_main.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_SRCS) \
+	    -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+.PHONY: build_streaming_b_cont run_streaming_b_cont
+
+build_streaming_b_cont: $(BUILD)/streaming_b_cont
+
+run_streaming_b_cont: $(BUILD)/streaming_b_cont test_data.bin
+	@echo ""
+	@echo "Running streaming_b_cont on Spike (continuous stream, no reset) ..."
+	@echo "Expected LAST_HOP_ACC ≥ 0.83, BEST_HOP_ACC ≥ 0.84"
+	@echo ""
+	cd $(BUILD) && $(SPIKE) $(SPIKE_FLAGS) $(PK) streaming_b_cont \
+	    | tee streaming_b_cont.log
+	@echo ""
+	@grep -E "LAST_HOP_ACC:|BEST_HOP_ACC:|TOTAL:" $(BUILD)/streaming_b_cont.log || true
+	@echo "Full log: $(BUILD)/streaming_b_cont.log"
+
+# ── streaming_b_thresh (threshold sweep over continuous stream) ───────────────
+#
+# Sweeps T from -128 to 127 over window-level TP/FP/FN counts and reports
+# the precision-recall curve plus optimal F1 operating point.
+
+$(BUILD)/streaming_b_thresh: streaming_b/streaming_b_thresh_main.c \
+                              streaming_b/kws_stream_b.c \
+                              strided_s16_nodil/strided_s16_nodil_weights.h \
+                              $(NNOM_SRCS)
+	@mkdir -p $(BUILD)
+	@echo "Compiling streaming_b_thresh ..."
+	$(CC) $(CFLAGS) -Istrided_s16_nodil -Istreaming_b \
+	    streaming_b/streaming_b_thresh_main.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_SRCS) \
+	    -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+.PHONY: build_streaming_b_thresh run_streaming_b_thresh
+
+build_streaming_b_thresh: $(BUILD)/streaming_b_thresh
+
+run_streaming_b_thresh: $(BUILD)/streaming_b_thresh thresh_data.bin
+	@echo ""
+	@echo "Running streaming_b_thresh on Spike (real background/unknown filler) ..."
+	@echo ""
+	cd $(BUILD) && $(SPIKE) $(SPIKE_FLAGS) $(PK) streaming_b_thresh \
+	    | tee streaming_b_thresh.log
+	@echo ""
+	@grep -E "BEST_T:|BEST_F1:|BEST_P:|BEST_R:|BEST_T_PROB:" \
+	    $(BUILD)/streaming_b_thresh.log || true
+	@echo "Full log: $(BUILD)/streaming_b_thresh.log"
+
+thresh_data.bin:
+	python3 generate_thresh_data.py
+
+# ── streaming_b_realistic (full detector sim: smoothing + debounce sweep) ─────
+
+$(BUILD)/streaming_b_realistic: streaming_b/streaming_b_realistic_main.c \
+                                 streaming_b/kws_stream_b.c \
+                                 strided_s16_nodil/strided_s16_nodil_weights.h \
+                                 $(NNOM_SRCS)
+	@mkdir -p $(BUILD)
+	@echo "Compiling streaming_b_realistic ..."
+	$(CC) $(CFLAGS) -Istrided_s16_nodil -Istreaming_b \
+	    streaming_b/streaming_b_realistic_main.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_SRCS) \
+	    -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+.PHONY: build_streaming_b_realistic run_streaming_b_realistic
+
+build_streaming_b_realistic: $(BUILD)/streaming_b_realistic
+
+run_streaming_b_realistic: $(BUILD)/streaming_b_realistic thresh_data.bin
+	@echo ""
+	@echo "Running streaming_b_realistic on Spike ..."
+	@echo "(smoothing + debounce sweep, real background filler)"
+	@echo ""
+	cd $(BUILD) && $(SPIKE) $(SPIKE_FLAGS) $(PK) streaming_b_realistic \
+	    | tee streaming_b_realistic.log
+	@echo ""
+	@grep -E "BEST_T:|BEST_F1:|BEST_P:|BEST_R:|BEST_T_PROB:" \
+	    $(BUILD)/streaming_b_realistic.log || true
+	@echo "Full log: $(BUILD)/streaming_b_realistic.log"
 
 # ── Template for adding a new model ──────────────────────────────────────────
 # To add a new model (e.g. da4a), uncomment and edit:

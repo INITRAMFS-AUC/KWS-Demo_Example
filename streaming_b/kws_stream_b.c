@@ -157,7 +157,7 @@ static void update_ctx2(int8_t *ctx, const int8_t *frames, int n_frames, int ch)
 
 /* ── per-hop processing ──────────────────────────────────────────────────── */
 
-static void run_hop(kws_stream_b_t *s, const int8_t *new_audio, int8_t *logits)
+static void run_hop(kws_stream_b_t *s, const int8_t *new_audio, int8_t *scores)
 {
     /* ── sinc (kernel 1×129, stride 16, valid, 32ch output) ──────────────── */
     memcpy(scratch_sinc_in,         s->audio_ring, 128);
@@ -273,7 +273,7 @@ static void run_hop(kws_stream_b_t *s, const int8_t *new_audio, int8_t *logits)
     int n = s->gap_count;
     if (n == 0) {
         /* can't produce logits yet — fill zeros and return */
-        for (int c = 0; c < KWS_B_NUM_CLASSES; c++) logits[c] = -128;
+        for (int c = 0; c < KWS_B_NUM_CLASSES; c++) scores[c] = 0;
         return;
     }
 
@@ -312,9 +312,13 @@ static void run_hop(kws_stream_b_t *s, const int8_t *new_audio, int8_t *logits)
             32, KWS_B_NUM_CLASSES,
             (uint16_t)_d1_bs[0], (uint16_t)_d1_os[0],
             tensor_dense_1_bias_0_data,
-            logits,
+            scores,
             scratch_fc_buf);
     }
+
+    /* Softmax: convert raw Dense1 outputs to Q7 probabilities (value/128).
+     * Matches the batch model_run() output scale so thresholds are portable. */
+    local_softmax_q7(scores, KWS_B_NUM_CLASSES, scores);
 }
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
@@ -325,7 +329,7 @@ void kws_stream_b_reset(kws_stream_b_t *s)
 }
 
 int kws_stream_b_push(kws_stream_b_t *s, const int8_t *samples, int n,
-                      int8_t logits[KWS_B_NUM_CLASSES])
+                      int8_t scores[KWS_B_NUM_CLASSES])
 {
     int produced = 0;
     int i = 0;
@@ -339,7 +343,7 @@ int kws_stream_b_push(kws_stream_b_t *s, const int8_t *samples, int n,
         i += take;
 
         if (s->samples_pending == KWS_B_HOP) {
-            run_hop(s, s->sample_buf, logits);
+            run_hop(s, s->sample_buf, scores);
             s->samples_pending = 0;
             produced = 1;   /* report only the last inference in this call */
         }

@@ -67,7 +67,7 @@ int main(void)
     static kws_stream_b_t stream;
 
     int stream_correct = 0, total = 0;
-    int8_t logits[NUM_CLASSES];
+    int8_t scores[NUM_CLASSES];
 
     printf("RESULTS_START\n");
 
@@ -84,12 +84,12 @@ int main(void)
             seek += SAMPLES_PER_CLIP;
             int label = (int)labels[i];
 
-            /* Push 5 hops of 1600 samples; use the final-hop logits. */
+            /* Push 5 hops of 1600 samples; use the final-hop scores. */
             kws_stream_b_reset(&stream);
             for (int h = 0; h < HOPS_PER_CLIP; h++)
-                kws_stream_b_push(&stream, audio + h * HOP, HOP, logits);
+                kws_stream_b_push(&stream, audio + h * HOP, HOP, scores);
 
-            int pred = argmax8(logits, NUM_CLASSES);
+            int pred = argmax8(scores, NUM_CLASSES);
             if (pred == label) stream_correct++;
             total++;
 
