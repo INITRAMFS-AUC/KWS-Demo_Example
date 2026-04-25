@@ -345,6 +345,42 @@ $(BUILD)/mel_compact_4blk_ch36_soc: mel_compact_4blk_ch36/kws_bare.c \
 build_mel_compact_4blk_ch36_bare: $(BUILD)/mel_compact_4blk_ch36_bare
 build_mel_compact_4blk_ch36_soc:  $(BUILD)/mel_compact_4blk_ch36_soc
 
+# ── streaming_b (Option B streaming engine, strided_s16_nodil) ───────────────
+#
+# Custom causal streaming engine + direct primitive calls (no model_run).
+# Validates streaming accuracy vs batch baseline on test_data.bin.
+# Expected: STREAMING_ACC ≥ 0.83 (≤2.5% drop from causal padding)
+#           BATCH_ACC     ~ 0.855 (sanity check)
+#           PARITY        ≥ 0.90
+
+$(BUILD)/streaming_b: streaming_b/streaming_b_main.c \
+                      streaming_b/kws_stream_b.c \
+                      strided_s16_nodil/strided_s16_nodil_weights.h \
+                      $(NNOM_SRCS)
+	@mkdir -p $(BUILD)
+	@echo "Compiling streaming_b ..."
+	$(CC) $(CFLAGS) -Istrided_s16_nodil -Istreaming_b \
+	    streaming_b/streaming_b_main.c \
+	    streaming_b/kws_stream_b.c \
+	    $(NNOM_SRCS) \
+	    -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+.PHONY: build_streaming_b run_streaming_b
+
+build_streaming_b: $(BUILD)/streaming_b
+
+run_streaming_b: $(BUILD)/streaming_b test_data.bin
+	@echo ""
+	@echo "Running streaming_b on Spike ..."
+	@echo "Expected STREAMING_ACC ≥ 0.83, BATCH_ACC ~ 0.855, PARITY ≥ 0.90"
+	@echo ""
+	cd $(BUILD) && $(SPIKE) $(SPIKE_FLAGS) $(PK) streaming_b \
+	    | tee streaming_b.log
+	@echo ""
+	@grep -E "STREAMING_ACC:|BATCH_ACC:|PARITY:" $(BUILD)/streaming_b.log || true
+	@echo "Full log: $(BUILD)/streaming_b.log"
+
 # ── Template for adding a new model ──────────────────────────────────────────
 # To add a new model (e.g. da4a), uncomment and edit:
 #
