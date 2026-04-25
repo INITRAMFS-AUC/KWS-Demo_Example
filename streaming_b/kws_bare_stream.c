@@ -138,18 +138,27 @@ static inline void csr_enable_mie(void) {
 #define PLIC_BASE          0x0C000000UL
 #define PLIC_REG(off)      (*(volatile uint32_t *)(PLIC_BASE + (off)))
 #define I2S_PLIC_IRQ       2
-#define PLIC_CTX_MMODE     1   /* M-mode context for hart 0 */
+/* Enable IRQ in both Spike contexts — context 0 = S-mode, context 1 = M-mode
+ * for a single-hart RV32IMAC Spike build. */
+#define PLIC_NUM_CTXS      2
 
 static void plic_init(void) {
-    PLIC_REG(I2S_PLIC_IRQ * 4)                              = 1;  /* priority */
-    PLIC_REG(0x2000 + PLIC_CTX_MMODE * 0x80)               |= (1u << I2S_PLIC_IRQ);
-    PLIC_REG(0x200000 + (uint32_t)PLIC_CTX_MMODE * 0x1000)  = 0;  /* threshold=0 */
+    PLIC_REG(I2S_PLIC_IRQ * 4) = 1;    /* priority = 1 (non-zero = enabled) */
+    for (uint32_t c = 0; c < PLIC_NUM_CTXS; c++) {
+        PLIC_REG(0x2000   + c * 0x80)   |= (1u << I2S_PLIC_IRQ); /* enable */
+        PLIC_REG(0x200000 + c * 0x1000)  = 0;                     /* threshold=0 */
+    }
 }
+/* Claim from context 0 first; if it returns 0 (no pending) try context 1.
+ * Whichever is M-mode will return I2S_PLIC_IRQ=2. */
 static uint32_t plic_claim(void) {
-    return PLIC_REG(0x200004 + (uint32_t)PLIC_CTX_MMODE * 0x1000);
+    uint32_t id = PLIC_REG(0x200004);           /* context 0 claim */
+    if (!id) id = PLIC_REG(0x200004 + 0x1000);  /* context 1 claim */
+    return id ? id : I2S_PLIC_IRQ;
 }
 static void plic_complete(uint32_t irq_id) {
-    PLIC_REG(0x200004 + (uint32_t)PLIC_CTX_MMODE * 0x1000) = irq_id;
+    PLIC_REG(0x200004)          = irq_id;  /* complete in both contexts */
+    PLIC_REG(0x200004 + 0x1000) = irq_id;
 }
 #else
 /* Real SoC: no PLIC — IRQ deasserts automatically when FIFO drains */
